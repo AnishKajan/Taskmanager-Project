@@ -1,0 +1,14 @@
+services:
+  backend:
+    platform: linux/arm64 #remove for windows
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    #depends_on:
+     # - mongo
