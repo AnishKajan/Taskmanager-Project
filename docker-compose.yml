@@ -5,20 +5,20 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "5001:5001"
+      - "5050:5000"
     env_file:
       - ./backend/.env
     volumes:
       - ./backend:/app
-    #depends_on:
-     # - mongo
+    depends_on:
+      - mongo
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3001:80"
     volumes:
       - ./frontend:/app
     stdin_open: true
