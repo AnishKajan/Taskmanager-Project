@@ -23,10 +23,11 @@ const SignUpPage = () => {
 
   const handleSignUp = async () => {
     try {
-      await axios.post('http://localhost:5050/api/auth/signup', {
-        email,
-        password,
-      });
+      await axios.post('http://localhost:5050/api/auth/register', { 
+        email, 
+        password 
+    });
+
 
       setSnack({ open: true, message: 'Account Created Successfully' });
 
