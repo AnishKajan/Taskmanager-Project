@@ -35,6 +35,11 @@ router.post('/login', async (req, res) => {
   try {
     const db = await connectDB();
     const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password required' });
+    }
+
     const normalizedEmail = email.trim().toLowerCase();
 
     const user = await db.collection('users').findOne({ email: normalizedEmail });
@@ -44,7 +49,7 @@ router.post('/login', async (req, res) => {
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Incorrect Password' });
+      return res.status(401).json({ message: 'Incorrect password' });
     }
 
     const token = jwt.sign(
@@ -53,10 +58,10 @@ router.post('/login', async (req, res) => {
       { expiresIn: '2h' }
     );
 
-    res.status(200).json({ token, username: user.email });
+    return res.status(200).json({ token, username: user.email });
   } catch (err) {
-    console.error('Login Error:', err);
-    res.status(500).json({ message: 'Server error during login' });
+    console.error('Login Error:', err.message);
+    return res.status(500).json({ message: 'Server error during login' });
   }
 });
 
