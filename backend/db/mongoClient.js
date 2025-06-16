@@ -2,28 +2,34 @@ const { MongoClient } = require('mongodb');
 require('dotenv').config();
 
 const uri = process.env.MONGO_URI;
-const dbName = process.env.MONGO_DB_NAME || 'taskmanager'; // Optional: set DB name in .env
+const dbName = process.env.MONGO_DB_NAME || 'taskmanager';
 
-let client;
-let db;
+let cachedClient = null;
+let cachedDb = null;
 
 async function connectDB() {
-  if (db) return db;
+  if (cachedDb) return cachedDb;
+
+  if (!uri) {
+    throw new Error('❌ Missing MONGO_URI in environment variables');
+  }
 
   try {
-    if (!client) {
-      client = new MongoClient(uri, {
+    if (!cachedClient) {
+      cachedClient = new MongoClient(uri, {
         useNewUrlParser: true,
         useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 5000, // Optional: avoid hanging forever
       });
-      await client.connect();
+      await cachedClient.connect();
+      console.log('✅ MongoDB connected successfully');
     }
 
-    db = client.db(dbName);
-    return db;
+    cachedDb = cachedClient.db(dbName);
+    return cachedDb;
   } catch (err) {
-    console.error('MongoDB connection error:', err);
-    throw err;
+    console.error('❌ MongoDB connection error:', err.message);
+    throw new Error('Failed to connect to MongoDB');
   }
 }
 
