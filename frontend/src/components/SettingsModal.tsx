@@ -15,7 +15,7 @@ import {
   Snackbar,
   Alert,
 } from '@mui/material';
-import { createPortal } from 'react-dom'; // ADD THIS IMPORT
+import { createPortal } from 'react-dom';
 import CloseIcon from '@mui/icons-material/Close';
 import LogoutIcon from '@mui/icons-material/Logout';
 import axios from 'axios';
@@ -43,12 +43,28 @@ const avatarColors = [
   '#ff9800', '#ff5722', '#795548', '#607d8b', '#f44336'
 ];
 
+// SECURITY: Function to strip HTML tags and validate input
+const sanitizeInput = (input: string): string => {
+  // Remove HTML tags
+  const withoutTags = input.replace(/<[^>]*>/g, '');
+  // Remove extra whitespace
+  return withoutTags.trim();
+};
+
 export default function SettingsModal({ open, onClose }: Props) {
   const [privacy, setPrivacy] = useState<'private' | 'public'>('public');
   const [username, setUsername] = useState('');
-  const [originalUsername, setOriginalUsername] = useState('');
   const [avatarImage, setAvatarImage] = useState<string | null>(null);
   const [avatarColor, setAvatarColor] = useState('#9c27b0');
+  
+  // ORIGINAL VALUES: Store the original values when modal opens for proper revert functionality
+  const [originalValues, setOriginalValues] = useState({
+    privacy: 'public' as 'private' | 'public',
+    username: '',
+    avatarImage: null as string | null,
+    avatarColor: '#9c27b0'
+  });
+  
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
@@ -66,31 +82,96 @@ export default function SettingsModal({ open, onClose }: Props) {
         const user = res.data.find((u: any) => u.email === email);
         
         if (user) {
-          setPrivacy(user.privacy || 'public');
-          setUsername(user.username || email.split('@')[0]);
-          setOriginalUsername(user.username || email.split('@')[0]);
-          setAvatarColor(user.avatarColor || '#9c27b0');
-          setAvatarImage(user.avatarImage || null);
+          const userData = {
+            privacy: user.privacy || 'public',
+            username: user.username || email.split('@')[0],
+            avatarColor: user.avatarColor || '#9c27b0',
+            avatarImage: user.avatarImage || null
+          };
+          
+          // Set current values
+          setPrivacy(userData.privacy);
+          setUsername(userData.username);
+          setAvatarColor(userData.avatarColor);
+          setAvatarImage(userData.avatarImage);
+          
+          // STORE ORIGINAL VALUES: Save these as the "original" state for revert functionality
+          setOriginalValues(userData);
         } else {
           // Default values if user not found
           const defaultUsername = email.split('@')[0];
-          setUsername(defaultUsername);
-          setOriginalUsername(defaultUsername);
+          const defaultData = {
+            privacy: 'public' as 'private' | 'public',
+            username: defaultUsername,
+            avatarColor: '#9c27b0',
+            avatarImage: null
+          };
+          
+          setPrivacy(defaultData.privacy);
+          setUsername(defaultData.username);
+          setAvatarColor(defaultData.avatarColor);
+          setAvatarImage(defaultData.avatarImage);
+          
+          // Store defaults as original values
+          setOriginalValues(defaultData);
         }
       } catch (err) {
         console.error('Failed to fetch user data:', err);
         // Fallback to email-based username
         const defaultUsername = email.split('@')[0];
-        setUsername(defaultUsername);
-        setOriginalUsername(defaultUsername);
+        const fallbackData = {
+          privacy: 'public' as 'private' | 'public',
+          username: defaultUsername,
+          avatarColor: '#9c27b0',
+          avatarImage: null
+        };
+        
+        setPrivacy(fallbackData.privacy);
+        setUsername(fallbackData.username);
+        setAvatarColor(fallbackData.avatarColor);
+        setAvatarImage(fallbackData.avatarImage);
+        
+        // Store fallback as original values
+        setOriginalValues(fallbackData);
       }
     };
 
     fetchUserData();
   }, [email, open]);
 
+  // VALIDATION: Handle username input with sanitization and length limit
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value;
+    const sanitized = sanitizeInput(rawValue);
+    
+    // LIMIT: Maximum 50 characters for username
+    if (sanitized.length <= 50) {
+      setUsername(sanitized);
+    }
+  };
+
   const handleSave = async () => {
     try {
+      // VALIDATION: Check if username is valid
+      if (!username.trim()) {
+        setSnackbar({
+          open: true,
+          message: 'Username cannot be empty',
+          severity: 'error'
+        });
+        return;
+      }
+
+      // VALIDATION: Check for HTML content
+      if (username !== sanitizeInput(username)) {
+        setSnackbar({
+          open: true,
+          message: 'Username cannot contain HTML tags',
+          severity: 'error'
+        });
+        return;
+      }
+
       if (email) {
         await axios.patch(`http://localhost:5050/api/users/profile`, {
           email,
@@ -107,25 +188,25 @@ export default function SettingsModal({ open, onClose }: Props) {
         });
 
         // Update localStorage if username changed
-        if (username !== originalUsername) {
+        if (username !== originalValues.username) {
           localStorage.setItem('username', username);
         }
 
         // Signal to Dashboard that user settings have been updated
-        // This will trigger a refresh of user data in Dashboard
         localStorage.setItem('userSettingsUpdated', Date.now().toString());
         
-        // Dispatch a custom event to notify other components immediately
+        // Dispatch events to notify other components
         window.dispatchEvent(new CustomEvent('userSettingsUpdated'));
-        
-        // Also trigger storage event manually for same-window communication
         window.dispatchEvent(new StorageEvent('storage', {
           key: 'userSettingsUpdated',
           newValue: Date.now().toString(),
           storageArea: localStorage
         }));
         
-        // Do NOT close modal after save - let user close it manually
+        // AUTO-CLOSE: Close modal after successful save
+        setTimeout(() => {
+          onClose();
+        }, 1000); // Close after 1 second to let user see success message
       }
     } catch (err) {
       console.error('Failed to update settings:', err);
@@ -157,11 +238,11 @@ export default function SettingsModal({ open, onClose }: Props) {
   };
 
   const handleRevert = () => {
-    // Reset to original values
-    setUsername(originalUsername);
-    setAvatarImage(null);
-    setAvatarColor('#9c27b0');
-    setPrivacy('public');
+    // FIXED REVERT: Reset to the original values when the modal was opened, not hardcoded defaults
+    setUsername(originalValues.username);
+    setAvatarImage(originalValues.avatarImage);
+    setAvatarColor(originalValues.avatarColor);
+    setPrivacy(originalValues.privacy);
   };
 
   const handleLogout = () => {
@@ -189,7 +270,7 @@ export default function SettingsModal({ open, onClose }: Props) {
     );
   };
 
-  // Render snackbar using portal to position it relative to the full page
+  // Render snackbar using portal
   const renderSnackbar = () => {
     if (typeof document === 'undefined') return null;
     
@@ -199,7 +280,7 @@ export default function SettingsModal({ open, onClose }: Props) {
         autoHideDuration={3000}
         onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        sx={{ zIndex: 9999 }} // Ensure it appears above the modal
+        sx={{ zIndex: 9999 }}
       >
         <Alert 
           severity={snackbar.severity} 
@@ -239,13 +320,16 @@ export default function SettingsModal({ open, onClose }: Props) {
             </Select>
           </FormControl>
 
-          {/* Username Field */}
+          {/* Username Field with Character Limit */}
           <TextField
             fullWidth
             label="Edit Username"
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={handleUsernameChange}
             sx={{ mb: 3 }}
+            helperText={`${username.length}/50 characters`}
+            inputProps={{ maxLength: 50 }}
+            error={username.length === 0}
           />
 
           {/* Avatar Section */}

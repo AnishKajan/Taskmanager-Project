@@ -17,6 +17,14 @@ import axios from 'axios';
 
 const API = 'http://localhost:5050/api/auth';
 
+// SECURITY: Function to strip HTML tags and validate input
+const sanitizeInput = (input: string): string => {
+  // Remove HTML tags
+  const withoutTags = input.replace(/<[^>]*>/g, '');
+  // Remove extra whitespace
+  return withoutTags.trim();
+};
+
 export default function SignupPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState<string>('');
@@ -28,15 +36,78 @@ export default function SignupPage() {
     severity: 'error' | 'success';
   }>({ open: false, message: '', severity: 'error' });
 
-  // Function to get username from email
+  // Function to get username from email with validation
   const getUsername = (email: string): string => {
-    return email.split('@')[0] || '';
+    const username = email.split('@')[0] || '';
+    const sanitized = sanitizeInput(username);
+    
+    // LIMIT: Maximum 50 characters for username
+    return sanitized.length <= 50 ? sanitized : sanitized.substring(0, 50);
+  };
+
+  // VALIDATION: Handle email input with sanitization
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value;
+    const sanitized = sanitizeInput(rawValue);
+    setEmail(sanitized);
   };
 
   const handleSignup = async () => {
     try {
+      // VALIDATION: Check if email is valid
+      if (!email.trim()) {
+        setSnackbar({
+          open: true,
+          message: 'Email is required',
+          severity: 'error',
+        });
+        return;
+      }
+
+      // VALIDATION: Check for HTML content in email
+      if (email !== sanitizeInput(email)) {
+        setSnackbar({
+          open: true,
+          message: 'Email cannot contain HTML tags',
+          severity: 'error',
+        });
+        return;
+      }
+
+      // VALIDATION: Basic email format check
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        setSnackbar({
+          open: true,
+          message: 'Please enter a valid email address',
+          severity: 'error',
+        });
+        return;
+      }
+
+      // VALIDATION: Check if password is provided
+      if (!password.trim()) {
+        setSnackbar({
+          open: true,
+          message: 'Password is required',
+          severity: 'error',
+        });
+        return;
+      }
+
+      // VALIDATION: Check username length (derived from email)
+      const username = getUsername(email);
+      if (username.length === 0) {
+        setSnackbar({
+          open: true,
+          message: 'Invalid email format for username generation',
+          severity: 'error',
+        });
+        return;
+      }
+
       await axios.post(`${API}/signup`, {
-        email: email.toLowerCase(),
+        email: email.toLowerCase().trim(),
         password,
       });
 
@@ -102,8 +173,13 @@ export default function SignupPage() {
             {getUsername(email).charAt(0).toUpperCase()}
           </Avatar>
           <Typography variant="caption" color="text.secondary" mt={1}>
-            Username: {getUsername(email)}
+            Username: {getUsername(email)} ({getUsername(email).length}/50 chars)
           </Typography>
+          {getUsername(email).length === 50 && (
+            <Typography variant="caption" color="warning.main">
+              Username truncated to 50 characters
+            </Typography>
+          )}
         </Box>
       )}
 
@@ -111,9 +187,17 @@ export default function SignupPage() {
         placeholder="Enter Email"
         type="email"
         value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        onChange={handleEmailChange}
         fullWidth
         sx={{ width: 300, mb: 2, backgroundColor: '#ddd' }}
+        error={email.length > 0 && (email !== sanitizeInput(email) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))}
+        helperText={
+          email.length > 0 && email !== sanitizeInput(email) 
+            ? 'Email cannot contain HTML tags'
+            : email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+            ? 'Please enter a valid email address'
+            : ''
+        }
       />
 
       <TextField
@@ -139,6 +223,12 @@ export default function SignupPage() {
         variant="outlined"
         fullWidth
         sx={{ width: 300, fontWeight: 600, backgroundColor: '#eee', boxShadow: 1 }}
+        disabled={
+          !email.trim() || 
+          !password.trim() || 
+          email !== sanitizeInput(email) || 
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+        }
       >
         Sign Up
       </Button>

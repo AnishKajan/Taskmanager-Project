@@ -40,6 +40,14 @@ const Circle = ({ filled }: { filled: boolean }) => (
   />
 );
 
+// SECURITY: Function to strip HTML tags and validate input
+const sanitizeInput = (input: string): string => {
+  // Remove HTML tags
+  const withoutTags = input.replace(/<[^>]*>/g, '');
+  // Remove extra whitespace
+  return withoutTags.trim();
+};
+
 const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, onClose, onAdd, section }) => {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
@@ -55,6 +63,7 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, onClose, onAdd, secti
   const [users, setUsers] = useState<UserType[]>([]);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('error');
 
   // Reset form when modal opens with default values for required fields
   useEffect(() => {
@@ -90,6 +99,7 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, onClose, onAdd, secti
           return res.json();
         })
         .then(data => {
+          // Only show users with public privacy setting
           const visibleUsers = data.filter((u: UserType) => u.privacy === 'public');
           setUsers(visibleUsers);
         })
@@ -100,9 +110,26 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, onClose, onAdd, secti
     }
   }, [open]);
 
+  // VALIDATION: Handle title input with sanitization and length limit
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value;
+    const sanitized = sanitizeInput(rawValue);
+    
+    // LIMIT: Maximum 100 characters for task title
+    if (sanitized.length <= 100) {
+      setTitle(sanitized);
+    }
+  };
+
   const convertToMinutes = (hour: string, minute: string, period: string): number => {
     const h = parseInt(hour) % 12 + (period === 'PM' ? 12 : 0);
     return h * 60 + parseInt(minute);
+  };
+
+  const showSnackbar = (message: string, severity: 'success' | 'error') => {
+    setSnackbarMessage(message);
+    setSnackbarSeverity(severity);
+    setSnackbarOpen(true);
   };
 
   const handleAdd = () => {
@@ -112,22 +139,31 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, onClose, onAdd, secti
     console.log('Start time:', startHour, startMin, startPeriod);
     console.log('Section:', section);
 
-    // Validation for required fields
+    // VALIDATION: Check for empty title
     if (!title.trim()) {
-      setSnackbarMessage('Task name is required');
-      setSnackbarOpen(true);
+      showSnackbar('Task name is required', 'error');
+      return;
+    }
+
+    // VALIDATION: Check for HTML content
+    if (title !== sanitizeInput(title)) {
+      showSnackbar('Task name cannot contain HTML tags', 'error');
+      return;
+    }
+
+    // VALIDATION: Check title length
+    if (title.length > 100) {
+      showSnackbar('Task name cannot exceed 100 characters', 'error');
       return;
     }
 
     if (!date.trim()) {
-      setSnackbarMessage('Date is required');
-      setSnackbarOpen(true);
+      showSnackbar('Date is required', 'error');
       return;
     }
 
     if (!startHour || !startMin || !startPeriod) {
-      setSnackbarMessage('Start time is required');
-      setSnackbarOpen(true);
+      showSnackbar('Start time is required', 'error');
       return;
     }
 
@@ -136,8 +172,7 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, onClose, onAdd, secti
     const hasCompleteEndTime = endHour && endMin && endPeriod;
     
     if (hasEndTime && !hasCompleteEndTime) {
-      setSnackbarMessage('Please complete all end time fields or leave them empty');
-      setSnackbarOpen(true);
+      showSnackbar('Please complete all end time fields or leave them empty', 'error');
       return;
     }
 
@@ -146,8 +181,7 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, onClose, onAdd, secti
       const start = convertToMinutes(startHour, startMin, startPeriod);
       const end = convertToMinutes(endHour, endMin, endPeriod);
       if (end <= start) {
-        setSnackbarMessage('End time cannot be earlier than or equal to start time');
-        setSnackbarOpen(true);
+        showSnackbar('End time cannot be earlier than or equal to start time', 'error');
         return;
       }
     }
@@ -176,7 +210,15 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, onClose, onAdd, secti
     };
 
     console.log('📤 Sending task data:', taskData);
+    
+    // Call onAdd and show success message
     onAdd(taskData);
+    showSnackbar('Task created successfully!', 'success');
+    
+    // AUTO-CLOSE: Close modal after successful creation
+    setTimeout(() => {
+      onClose();
+    }, 1000); // Close after 1 second to let user see success message
   };
 
   return (
@@ -185,18 +227,19 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, onClose, onAdd, secti
         <Box sx={style}>
           <Typography variant="h5" fontWeight="bold" textAlign="center" mb={2}>Add Task</Typography>
 
-          {/* Task Name */}
+          {/* Task Name with Character Limit */}
           <Stack direction="row" alignItems="center" spacing={2} mb={2}>
             <Circle filled={true} />
             <TextField
               placeholder="Enter Task Name"
               fullWidth
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={handleTitleChange}
               sx={{ backgroundColor: '#ddd' }}
               required
               error={!title.trim()}
-              helperText={!title.trim() ? 'Task name is required' : ''}
+              helperText={!title.trim() ? 'Task name is required' : `${title.length}/100 characters`}
+              inputProps={{ maxLength: 100 }}
             />
           </Stack>
 
@@ -374,9 +417,9 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({ open, onClose, onAdd, secti
           autoHideDuration={3000}
           onClose={() => setSnackbarOpen(false)}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-          sx={{ zIndex: 9999 }} // Ensure it appears above everything including modals
+          sx={{ zIndex: 9999 }}
         >
-          <Alert severity="error" sx={{ width: '100%' }}>
+          <Alert severity={snackbarSeverity} sx={{ width: '100%' }}>
             {snackbarMessage}
           </Alert>
         </Snackbar>

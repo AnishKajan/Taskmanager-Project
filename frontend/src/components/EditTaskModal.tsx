@@ -44,6 +44,14 @@ const Circle = ({ filled }: { filled: boolean }) => (
   />
 );
 
+// SECURITY: Function to strip HTML tags and validate input
+const sanitizeInput = (input: string): string => {
+  // Remove HTML tags
+  const withoutTags = input.replace(/<[^>]*>/g, '');
+  // Remove extra whitespace
+  return withoutTags.trim();
+};
+
 const EditTaskModal: React.FC<EditTaskModalProps> = ({ open, onClose, task, onSave, onDelete }) => {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
@@ -108,6 +116,7 @@ const EditTaskModal: React.FC<EditTaskModalProps> = ({ open, onClose, task, onSa
           return res.json();
         })
         .then(data => {
+          // Only show users with public privacy setting
           const visibleUsers = data.filter((u: UserType) => u.privacy === 'public');
           setUsers(visibleUsers);
         })
@@ -117,6 +126,17 @@ const EditTaskModal: React.FC<EditTaskModalProps> = ({ open, onClose, task, onSa
         });
     }
   }, [open]);
+
+  // VALIDATION: Handle title input with sanitization and length limit
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value;
+    const sanitized = sanitizeInput(rawValue);
+    
+    // LIMIT: Maximum 100 characters for task title
+    if (sanitized.length <= 100) {
+      setTitle(sanitized);
+    }
+  };
 
   const convertToMinutes = (hour: string, minute: string, period: string): number => {
     const h = parseInt(hour) % 12 + (period === 'PM' ? 12 : 0);
@@ -141,11 +161,33 @@ const EditTaskModal: React.FC<EditTaskModalProps> = ({ open, onClose, task, onSa
     
     setIsLoading(true);
     
-    // Validation
+    // VALIDATION: Check for empty title
     if (!title.trim()) {
       setSnackbar({
         open: true,
         message: 'Task name is required',
+        severity: 'error'
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    // VALIDATION: Check for HTML content
+    if (title !== sanitizeInput(title)) {
+      setSnackbar({
+        open: true,
+        message: 'Task name cannot contain HTML tags',
+        severity: 'error'
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    // VALIDATION: Check title length
+    if (title.length > 100) {
+      setSnackbar({
+        open: true,
+        message: 'Task name cannot exceed 100 characters',
         severity: 'error'
       });
       setIsLoading(false);
@@ -233,12 +275,14 @@ const EditTaskModal: React.FC<EditTaskModalProps> = ({ open, onClose, task, onSa
       
       setSnackbar({
         open: true,
-        message: 'Changes Saved',
+        message: 'Changes Saved Successfully!',
         severity: 'success'
       });
       
-      // REMOVED: Auto-close functionality
-      // The modal will now stay open after saving
+      // AUTO-CLOSE: Close modal after successful save
+      setTimeout(() => {
+        onClose();
+      }, 1000); // Close after 1 second to let user see success message
       
     } catch (error: unknown) {
       console.error('❌ EditTaskModal: Save failed:', error);
@@ -257,11 +301,14 @@ const EditTaskModal: React.FC<EditTaskModalProps> = ({ open, onClose, task, onSa
           // Show success instead since the functionality is working
           setSnackbar({
             open: true,
-            message: 'Changes Saved',
+            message: 'Changes Saved Successfully!',
             severity: 'success'
           });
           
-          // REMOVED: Auto-close functionality for 404 errors too
+          // AUTO-CLOSE: Close modal for 404 errors too
+          setTimeout(() => {
+            onClose();
+          }, 1000);
           
         } else {
           // For other errors, show them
@@ -320,16 +367,19 @@ const EditTaskModal: React.FC<EditTaskModalProps> = ({ open, onClose, task, onSa
         )}
 
         <Box display="flex" flexDirection="column" gap={2} mt={2}>
-          {/* Title */}
+          {/* Title with Character Limit */}
           <Stack direction="row" spacing={2} alignItems="center">
             <Circle filled={!!title.trim()} />
             <TextField
               placeholder="Edit Task Name"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={handleTitleChange}
               fullWidth
               sx={{ backgroundColor: '#ddd' }}
               required
+              helperText={`${title.length}/100 characters`}
+              inputProps={{ maxLength: 100 }}
+              error={!title.trim()}
             />
           </Stack>
 
