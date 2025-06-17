@@ -33,8 +33,7 @@ router.post('/signup', async (req, res) => {
       privacy: 'public', // default
       // Default avatar settings
       username: username,
-      avatarColor: '
-#607d8b', // grey color
+      avatarColor: '#607d8b', // grey color
       avatarImage: null
     });
 
